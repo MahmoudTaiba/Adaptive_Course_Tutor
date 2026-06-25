@@ -1,13 +1,11 @@
 """
-app.py — Stage 1 Streamlit shell (deliberately minimal).
+app.py — Stage 2: Memory Architecture added on top of Stage 1 shell.
 
-Stage 1 scope:
-  ✅ Profile picker
-  ✅ Chat box
-  ✅ Citations display
-  ❌ No session persistence yet (Stage 3)
-  ❌ No quiz UI yet (Stage 2)
-  ❌ No memory panel yet (Stage 3)
+New in Stage 2:
+  ✅ load_memory_block() at session start → injected into graph state
+  ✅ "End session & save memory" button → summarize + persist SessionLog
+  ✅ Memory block shown in sidebar so user can see what the tutor remembers
+  ❌ No quiz UI yet (Stage 3)
 """
 
 import streamlit as st
@@ -15,6 +13,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from graph import tutor_graph
 from graph_state import TutorState
+from memory import load_memory_block, persist_log, summarize_session
 from profiles import PROFILES
 from schemas import StudentProfile
 
@@ -27,7 +26,7 @@ st.set_page_config(
 )
 
 st.title("🎓 Adaptive Course Tutor")
-st.caption("Stage 1 — Foundations (mock retriever active)")
+st.caption("Stage 2 — Memory Architecture")
 
 # ─── Session state initialisation ─────────────────────────────────────────────
 
@@ -39,6 +38,16 @@ if "profile" not in st.session_state:
 
 if "citations" not in st.session_state:
     st.session_state.citations: list = []
+
+if "memory_block" not in st.session_state:
+    st.session_state.memory_block: str = ""
+
+if "memory_loaded_for" not in st.session_state:
+    # Track which profile we last loaded memory for (avoid reloading on every rerun)
+    st.session_state.memory_loaded_for: str = ""
+
+if "session_saved" not in st.session_state:
+    st.session_state.session_saved: bool = False
 
 # ─── Sidebar: Profile Picker ───────────────────────────────────────────────────
 
@@ -58,6 +67,13 @@ with st.sidebar:
     selected_profile = PROFILES[profile_choice]
     st.session_state.profile = selected_profile
 
+    # Load memory when profile changes
+    if st.session_state.memory_loaded_for != selected_profile.name:
+        st.session_state.memory_block = load_memory_block(selected_profile.name, max_sessions=3)
+        st.session_state.memory_loaded_for = selected_profile.name
+        st.session_state.messages = []        # fresh chat for new profile
+        st.session_state.session_saved = False
+
     st.markdown("---")
     st.markdown(f"**Name:** {selected_profile.name}")
     st.markdown(f"**Time budget:** {selected_profile.time_budget} min")
@@ -65,17 +81,49 @@ with st.sidebar:
     for g in selected_profile.goals:
         st.markdown(f"- {g}")
 
+    # ── Memory block display ──────────────────────────────────────────────────
     st.markdown("---")
-    if st.button("🗑️ Clear chat"):
+    st.markdown("**🧠 Prior Session Memory**")
+    if st.session_state.memory_block:
+        st.info(st.session_state.memory_block)
+    else:
+        st.caption("No prior sessions yet.")
+
+    st.markdown("---")
+
+    # ── End Session button ────────────────────────────────────────────────────
+    if st.button("💾 End session & save memory", use_container_width=True):
+        if len(st.session_state.messages) < 2:
+            st.warning("Have a conversation first before saving.")
+        elif st.session_state.session_saved:
+            st.info("Session already saved.")
+        else:
+            with st.spinner("Summarising session…"):
+                log = summarize_session(
+                    student_name=selected_profile.name,
+                    messages=st.session_state.messages,
+                )
+                persist_log(log)
+                st.session_state.session_saved = True
+                # Refresh memory block for next session preview
+                st.session_state.memory_block = load_memory_block(
+                    selected_profile.name, max_sessions=3
+                )
+            st.success(f"Session saved! Topics covered: {', '.join(log.topics_covered) or 'none'}")
+            if log.weak_topics:
+                st.warning(f"Weak topics logged: {', '.join(log.weak_topics)}")
+
+    if st.button("🗑️ Clear chat", use_container_width=True):
         st.session_state.messages = []
         st.session_state.citations = []
+        st.session_state.session_saved = False
         st.rerun()
 
-    # Stage indicator
     st.markdown("---")
-    st.markdown("**Build stage:** `Stage 1 / 4`")
+    st.markdown("**Build stage:** `Stage 2 / 4`")
     st.markdown("**Retriever:** ⚠️ Mock")
-    st.markdown("**LLM:** Claude Sonnet 4.6")
+    st.markdown("**LLM:** Llama-3.3-70b (Groq)")
+    st.markdown("**Memory:** ✅ JSON session logs")
 
 # ─── Chat history display ──────────────────────────────────────────────────────
 
@@ -91,38 +139,37 @@ for msg in st.session_state.messages:
 
 if user_input := st.chat_input("Ask anything about the course material…"):
 
-    # Show user message immediately
+    if st.session_state.session_saved:
+        st.warning("Session was saved. Clear chat to start a new session.")
+        st.stop()
+
     human_msg = HumanMessage(content=user_input)
     st.session_state.messages.append(human_msg)
 
     with st.chat_message("user"):
         st.write(user_input)
 
-    # Build initial state for this turn
+    # Build state — memory_block now populated from prior sessions
     initial_state: TutorState = {
         "messages": st.session_state.messages,
         "profile": st.session_state.profile,
-        "memory_block": "",          # Stage 3: will be populated from SessionLog
+        "memory_block": st.session_state.memory_block,   # ← Stage 2 addition
         "retrieved_chunks": [],
         "citations": [],
         "route": None,
     }
 
-    # Run the graph
     with st.chat_message("assistant"):
         with st.spinner("Thinking…"):
             result = tutor_graph.invoke(initial_state)
 
-    # Extract the latest AI message (last in result["messages"])
     ai_message = result["messages"][-1]
     st.session_state.messages = result["messages"]
     st.session_state.citations = result.get("citations", [])
 
-    # Display AI response
     with st.chat_message("assistant"):
         st.write(ai_message.content)
 
-    # Display citations
     if st.session_state.citations:
         with st.expander("📚 Sources used", expanded=False):
             for cite in st.session_state.citations:

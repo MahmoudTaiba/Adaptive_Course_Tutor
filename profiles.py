@@ -107,7 +107,13 @@ Goals for this session:
 
 --- Prior Session Memory ---
 {memory_block.strip()}
-(Use this to personalise your responses and avoid repeating things the student already knows.)"""
+
+Instructions for using this memory:
+- If the student asks about a topic they previously struggled with, acknowledge it gently \
+(e.g. "Last time this gave you trouble — let's tackle it differently.") and explain it \
+from a new angle.
+- Avoid re-explaining topics they already covered well unless they ask.
+- If the student seems to be revisiting a weak topic, give extra care and a different example."""
 
     rag_instruction = """\
 

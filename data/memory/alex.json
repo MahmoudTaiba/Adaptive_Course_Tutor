@@ -1,0 +1,15 @@
+[
+  {
+    "session_id": "1",
+    "student_name": "Alex",
+    "topics_covered": [
+      "gradient descent",
+      "backpropagation"
+    ],
+    "weak_topics": [
+      "backpropagation"
+    ],
+    "summary": "The student learned about gradient descent and backpropagation, but struggled to understand the latter concept.",
+    "timestamp": "2026-06-25T15:44:32.421070"
+  }
+]
