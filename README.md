@@ -1,16 +1,29 @@
-# Adaptive Course Tutor — Stage 1
+# Adaptive Course Tutor — Stage 2
 
-RAG-powered tutoring assistant. **Part B (Agent & Experience)** — built by Oracle Sense.
+RAG-powered tutoring assistant. **Part B (Agent & Experience)** — Oracle Sense.
+Part A (retrieval/ingestion/evaluation) — partner.
 
 ## Project Structure
 
 ```
 adaptive-course-tutor/
-├── schemas.py        # Shared Pydantic contracts (Part A ↔ Part B interface)
-├── profiles.py       # Student profiles + prompt-level adaptation
-├── graph_state.py    # LangGraph TutorState TypedDict
-├── graph.py          # LangGraph: retrieve → generate → END
-├── app.py            # Streamlit UI (profile picker + chat)
+├── app.py                   # Streamlit entry point
+├── src/
+│   ├── __init__.py
+│   ├── schemas.py           # ALL Pydantic contracts (single source of truth)
+│   ├── config.py            # Shared constants + get_llm(), get_client()
+│   ├── ingest.py            # PDF → chunks → Qdrant (Part A)
+│   ├── retrieve.py          # Qdrant vector retrieval (Part A)
+│   ├── profiles.py          # Student profiles + build_system_prompt()
+│   ├── graph_state.py       # LangGraph TutorState TypedDict
+│   ├── graph.py             # LangGraph: retrieve → generate → END
+│   └── memory.py            # Session-log memory system
+├── scripts/
+│   ├── run_ingest.py        # Ingest a PDF into Qdrant
+│   └── eval_retrieval.py    # Hit@k, Recall@k, MRR evaluation (Part A)
+├── data/
+│   ├── eval/qa.jsonl        # Eval questions (Part A fills this)
+│   └── memory/              # Per-student JSON session logs
 ├── requirements.txt
 ├── .env.example
 └── README.md
@@ -21,9 +34,9 @@ adaptive-course-tutor/
 | Stage | Status | Features |
 |-------|--------|----------|
 | 1 — Foundations | ✅ Done | Schemas, profiles, graph skeleton, Streamlit shell |
-| 2 — Quiz & Routing | 🔜 | Router node, quiz generation, quiz UI |
-| 3 — Memory | 🔜 | SessionLog persistence, memory injection |
-| 4 — Evaluation | 🔜 | Part A integration, RAGAS eval, polish |
+| 2 — Memory | ✅ Done | Session logs, memory injection, Qdrant integration |
+| 3 — Quiz & Routing | 🔜 | Router node, quiz generation, quiz UI |
+| 4 — Evaluation | 🔜 | RAGAS eval, polish |
 
 ## Quick Start
 
@@ -31,33 +44,30 @@ adaptive-course-tutor/
 # 1. Install dependencies
 pip install -r requirements.txt
 
-# 2. Set your API key
-cp .env.example .env
-# Edit .env and set ANTHROPIC_API_KEY=sk-ant-...
+# 2. Pull the LLM (Ollama must be installed)
+ollama pull llama3.1
 
-# 3. Run the app
+# 3. Ingest your course PDF (edit path in scripts/run_ingest.py first)
+python scripts/run_ingest.py
+
+# 4. Run the app
 streamlit run app.py
 ```
 
-The app will open at **http://localhost:8501**.
+App opens at **http://localhost:8501**.
 
-## Stage 1 Demo Checkpoint
+> **Before ingestion:** The app still runs using a mock retriever fallback.
+> After running `run_ingest.py`, real Qdrant retrieval activates automatically.
 
-1. Open the app
-2. Pick a profile from the sidebar (Beginner / Intermediate / Exam Prep)
-3. Ask any question (e.g. *"What is gradient descent?"*)
-4. You'll get a Claude-generated answer grounded in **mocked** course chunks
-5. Expand "📚 Sources used" to see the mock citations
+## LLM Configuration
 
-> ⚠️ **Note:** The retriever is mocked. It always returns 3 canned chunks about ML topics regardless of your query. Part A will wire in the real retriever in Stage 2.
+Model is set in `src/config.py`:
+```python
+LLM_MODEL = "llama3.1"   # change here to swap models everywhere
+```
 
-## Architecture Notes
+All LLM calls go through `get_llm()` — one place to change.
 
-### Prompt-Level Adaptation (NOT fine-tuning)
-`profiles.py::build_system_prompt()` injects a persona + constraints into the system prompt. Claude reads this and calibrates answer depth, vocabulary, and quiz difficulty accordingly. No model weights are changed.
+## Part A ↔ Part B Contract
 
-### Part A ↔ Part B Contract
-`schemas.py` is the agreed interface. `Chunk` (produced by Part A) and `Citation` (consumed by Part B) must not be changed unilaterally.
-
-### Mock Retriever Location
-In `graph.py`, the function `_mock_retrieve()` contains the mock. Its **signature** (`query: str → List[Chunk]`) is the contract. Part A replaces the body, not the signature.
+`src/schemas.py` is the single source of truth. `Chunk` / `Citation` / `RetrievedChunk` must not be changed unilaterally. `RetrievedChunk` extends `Chunk` with a `.similarity` score from Qdrant.

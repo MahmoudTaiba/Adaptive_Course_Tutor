@@ -1,21 +1,16 @@
 """
-app.py — Stage 2: Memory Architecture added on top of Stage 1 shell.
-
-New in Stage 2:
-  ✅ load_memory_block() at session start → injected into graph state
-  ✅ "End session & save memory" button → summarize + persist SessionLog
-  ✅ Memory block shown in sidebar so user can see what the tutor remembers
-  ❌ No quiz UI yet (Stage 3)
+app.py — Streamlit entry point. Imports everything from src/.
+Stage 2: Memory Architecture.
 """
 
 import streamlit as st
 from langchain_core.messages import AIMessage, HumanMessage
 
-from graph import tutor_graph
-from graph_state import TutorState
-from memory import load_memory_block, persist_log, summarize_session
-from profiles import PROFILES
-from schemas import StudentProfile
+from src.graph import tutor_graph
+from src.graph_state import TutorState
+from src.memory import load_memory_block, persist_log, summarize_session
+from src.profiles import PROFILES
+from src.schemas import StudentProfile
 
 # ─── Page config ──────────────────────────────────────────────────────────────
 
@@ -28,28 +23,22 @@ st.set_page_config(
 st.title("🎓 Adaptive Course Tutor")
 st.caption("Stage 2 — Memory Architecture")
 
-# ─── Session state initialisation ─────────────────────────────────────────────
+# ─── Session state ─────────────────────────────────────────────────────────────
 
 if "messages" not in st.session_state:
     st.session_state.messages: list = []
-
 if "profile" not in st.session_state:
     st.session_state.profile: StudentProfile | None = None
-
 if "citations" not in st.session_state:
     st.session_state.citations: list = []
-
 if "memory_block" not in st.session_state:
     st.session_state.memory_block: str = ""
-
 if "memory_loaded_for" not in st.session_state:
-    # Track which profile we last loaded memory for (avoid reloading on every rerun)
     st.session_state.memory_loaded_for: str = ""
-
 if "session_saved" not in st.session_state:
     st.session_state.session_saved: bool = False
 
-# ─── Sidebar: Profile Picker ───────────────────────────────────────────────────
+# ─── Sidebar ──────────────────────────────────────────────────────────────────
 
 with st.sidebar:
     st.header("Student Profile")
@@ -71,7 +60,7 @@ with st.sidebar:
     if st.session_state.memory_loaded_for != selected_profile.name:
         st.session_state.memory_block = load_memory_block(selected_profile.name, max_sessions=3)
         st.session_state.memory_loaded_for = selected_profile.name
-        st.session_state.messages = []        # fresh chat for new profile
+        st.session_state.messages = []
         st.session_state.session_saved = False
 
     st.markdown("---")
@@ -81,7 +70,6 @@ with st.sidebar:
     for g in selected_profile.goals:
         st.markdown(f"- {g}")
 
-    # ── Memory block display ──────────────────────────────────────────────────
     st.markdown("---")
     st.markdown("**🧠 Prior Session Memory**")
     if st.session_state.memory_block:
@@ -91,7 +79,6 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # ── End Session button ────────────────────────────────────────────────────
     if st.button("💾 End session & save memory", use_container_width=True):
         if len(st.session_state.messages) < 2:
             st.warning("Have a conversation first before saving.")
@@ -105,13 +92,12 @@ with st.sidebar:
                 )
                 persist_log(log)
                 st.session_state.session_saved = True
-                # Refresh memory block for next session preview
                 st.session_state.memory_block = load_memory_block(
                     selected_profile.name, max_sessions=3
                 )
-            st.success(f"Session saved! Topics covered: {', '.join(log.topics_covered) or 'none'}")
+            st.success(f"Saved! Topics: {', '.join(log.topics_covered) or 'none'}")
             if log.weak_topics:
-                st.warning(f"Weak topics logged: {', '.join(log.weak_topics)}")
+                st.warning(f"Weak topics: {', '.join(log.weak_topics)}")
 
     if st.button("🗑️ Clear chat", use_container_width=True):
         st.session_state.messages = []
@@ -121,11 +107,11 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("**Build stage:** `Stage 2 / 4`")
-    st.markdown("**Retriever:** ⚠️ Mock")
-    st.markdown("**LLM:** Llama-3.3-70b (Groq)")
+    st.markdown("**Retriever:** Qdrant (mock fallback if empty)")
+    st.markdown("**LLM:** Ollama llama3.1")
     st.markdown("**Memory:** ✅ JSON session logs")
 
-# ─── Chat history display ──────────────────────────────────────────────────────
+# ─── Chat history ──────────────────────────────────────────────────────────────
 
 for msg in st.session_state.messages:
     if isinstance(msg, HumanMessage):
@@ -149,11 +135,10 @@ if user_input := st.chat_input("Ask anything about the course material…"):
     with st.chat_message("user"):
         st.write(user_input)
 
-    # Build state — memory_block now populated from prior sessions
     initial_state: TutorState = {
         "messages": st.session_state.messages,
         "profile": st.session_state.profile,
-        "memory_block": st.session_state.memory_block,   # ← Stage 2 addition
+        "memory_block": st.session_state.memory_block,
         "retrieved_chunks": [],
         "citations": [],
         "route": None,
