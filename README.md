@@ -1,6 +1,6 @@
 # Adaptive Course Tutor — Stage 2
 
-RAG-powered tutoring assistant. **Part B (Agent & Experience)** — Oracle Sense.
+RAG-powered tutoring assistant. **Part B (Agent & Experience)** — 
 Part A (retrieval/ingestion/evaluation) — partner.
 
 ## Project Structure
